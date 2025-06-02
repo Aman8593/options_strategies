@@ -1,0 +1,58 @@
+.app-container {
+  padding: 2rem;
+  font-family: sans-serif;
+}
+
+.stock-info-title {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.selectors label {
+  margin-right: 1rem;
+}
+
+.dropdown {
+  margin-left: 0.5rem;
+  padding: 0.3rem;
+}
+
+.search-form {
+  margin-top: 1rem;
+}
+
+.search-input-container {
+  display: flex;
+  align-items: center;
+}
+
+.search-input {
+  padding: 0.4rem;
+  margin-left: 0.5rem;
+}
+
+.strategy-table {
+  width: 100%;
+  margin-top: 2rem;
+  border-collapse: collapse;
+}
+
+.strategy-table th,
+.strategy-table td {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  text-align: center;
+}
+
+.text-green {
+  color: green;
+}
+
+.text-red {
+  color: red;
+}
+
+.error-message {
+  color: red;
+  margin-top: 1rem;
+}
