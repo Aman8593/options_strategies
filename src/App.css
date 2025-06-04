@@ -55,4 +55,31 @@
 .error-message {
   color: red;
   margin-top: 1rem;
+} 
+.selectors-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.multi-leg-strikes {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.strike-premium-row {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.premium-box {
+  width: 90px;
+  padding: 4px;
+  background: #f9f9f9;
+  border: 1px solid #ccc;
+  border-radius: 4px;
 }
