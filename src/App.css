@@ -150,12 +150,12 @@ label {
 }
 
 .strategy-table th {
-  background: #2471a3;
-  color: #fff;
+  background: #f2f6fb;
+  color: #26324c;
+  font-weight: 700;
   padding: 10px 12px;
   text-align: left;
-  font-weight: 600;
-  font-size: 1.02rem;
+  font-size: 1.05rem;
 }
 
 .strategy-table td {

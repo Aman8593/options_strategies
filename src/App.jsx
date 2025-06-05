@@ -3,7 +3,7 @@ import axios from "axios";
 import { Search } from "lucide-react";
 import "./App.css";
 
-// Utility: "put_sell_strike" → "Put Sell Strike"
+// Utility: "put_sell_strike" → "Put Buy Strike"
 const prettyLabel = (raw) =>
   raw.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
 
@@ -16,6 +16,7 @@ const App = () => {
   const [selectedStrike, setSelectedStrike] = useState("");
   const [customPremiums, setCustomPremiums] = useState({});
 
+  // Main GET fetch
   const fetchStrategyData = async (symbol, expiry = "", strike = "") => {
     try {
       const url =
@@ -26,21 +27,60 @@ const App = () => {
       const res = await axios.get(url);
       const data = res.data;
       setStockInfo(data);
-      setCustomPremiums({}); // Reset premiums on new data
-
-      if (!selectedExpiry) {
-        setSelectedExpiry(data.expiry || expiry);
-      }
-
-      if (!selectedStrike) {
+      setCustomPremiums({});
+      if (!selectedExpiry) setSelectedExpiry(data.expiry || expiry);
+      if (!selectedStrike)
         setSelectedStrike(data.selected_strike || data.atm_strike || strike);
-      }
-
       setError(null);
       // eslint-disable-next-line no-unused-vars
     } catch (err) {
       setStockInfo(null);
       setError("Failed to fetch strategy data. Please check the ticker.");
+    }
+  };
+
+  // Premium POST (custom override)
+  const fetchCustomStrategyData = async (
+    symbol,
+    expiry,
+    strike,
+    updatedPremiums
+  ) => {
+    try {
+      // Prepare calls/puts as per backend contract
+      const calls = {};
+      const puts = {};
+      strategyLegs.forEach((leg) => {
+        // Heuristic for call/put from label or key
+        if (
+          leg.strikeLabel.toLowerCase().includes("call") ||
+          leg.key.startsWith("call")
+        ) {
+          calls[leg.strike] = Number(updatedPremiums[leg.key]);
+        } else if (
+          leg.strikeLabel.toLowerCase().includes("put") ||
+          leg.key.startsWith("put")
+        ) {
+          puts[leg.strike] = Number(updatedPremiums[leg.key]);
+        } else {
+          // fallback if unknown, assign to calls
+          calls[leg.strike] = Number(updatedPremiums[leg.key]);
+        }
+      });
+
+      const payload = { calls, puts };
+
+      const url =
+        `http://localhost:8000/options-strategy-pnl-custom?ticker=${symbol}` +
+        (expiry ? `&expiry=${expiry}` : "") +
+        (strike ? `&strike=${strike}` : "");
+
+      const res = await axios.post(url, payload);
+      setStockInfo(res.data);
+      setError(null);
+      // eslint-disable-next-line no-unused-vars
+    } catch (err) {
+      setError("Failed to update with custom premiums.");
     }
   };
 
@@ -82,12 +122,11 @@ const App = () => {
   const premiumData =
     stockInfo?.strategies?.[0]?.premium_breakdown?.[selectedStrategy] || {};
 
-  // ---- Extract Legs: Descriptive for Strike, simple "Premium" label ----
+  // ---- Extract Legs: Descriptive for Strike, only show strikeLabel for strike ----
   const extractLegs = (strategyPremiums) => {
     const legs = [];
     if (!strategyPremiums || typeof strategyPremiums !== "object") return legs;
 
-    // 1. Handle all {xxx_strike, xxx_premium} key pairs dynamically
     Object.keys(strategyPremiums).forEach((key) => {
       if (key.endsWith("strike")) {
         const strikeKey = key;
@@ -105,7 +144,7 @@ const App = () => {
       }
     });
 
-    // 2. Handle straddle/strangle pattern {strike, call_premium, put_premium}
+    // Straddle/strangle: {strike, call_premium, put_premium}
     if ("strike" in strategyPremiums && "call_premium" in strategyPremiums) {
       legs.push({
         key: "call_" + strategyPremiums.strike,
@@ -122,8 +161,7 @@ const App = () => {
         strikeLabel: "Put Strike",
       });
     }
-
-    // 3. Handle simple pattern {strike, premium}
+    // Simple pattern {strike, premium}
     if (
       "strike" in strategyPremiums &&
       "premium" in strategyPremiums &&
@@ -136,18 +174,20 @@ const App = () => {
         strikeLabel: "Strike",
       });
     }
-
     return legs;
   };
   // ---------------------------------------------------------------------
 
   const strategyLegs = extractLegs(premiumData);
 
+  // --- Premium Change Handler triggers POST ---
   const handlePremiumChange = (key, value) => {
-    setCustomPremiums((prev) => ({
-      ...prev,
-      [key]: Number(value),
-    }));
+    setCustomPremiums((prev) => {
+      const next = { ...prev, [key]: Number(value) };
+      // Only POST if value actually changed (not on init)
+      fetchCustomStrategyData(ticker, selectedExpiry, selectedStrike, next);
+      return next;
+    });
   };
 
   const LOT_SIZE = 100;
@@ -191,7 +231,6 @@ const App = () => {
           </div>
           <div className="selectors-row">
             <label> Expiry: </label>
-
             <select
               className="dropdown"
               value={selectedExpiry}
@@ -203,9 +242,7 @@ const App = () => {
                 </option>
               ))}
             </select>
-
             <label> Strategy: </label>
-
             <select
               className="dropdown"
               value={selectedStrategy}
@@ -223,9 +260,7 @@ const App = () => {
                     </option>
                   ))}
             </select>
-
             <label> Strike: </label>
-
             <select
               className="dropdown"
               value={selectedStrike}
