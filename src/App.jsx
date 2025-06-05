@@ -3,9 +3,10 @@ import axios from "axios";
 import { Search } from "lucide-react";
 import "./App.css";
 
-// Utility: "put_sell_strike" → "Put Buy Strike"
 const prettyLabel = (raw) =>
   raw.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+
+const SKELETON_ROW_COUNT = 8; // Number of shimmer rows to show when loading
 
 const App = () => {
   const [ticker, setTicker] = useState("AAPL");
@@ -15,9 +16,11 @@ const App = () => {
   const [selectedStrategy, setSelectedStrategy] = useState("");
   const [selectedStrike, setSelectedStrike] = useState("");
   const [customPremiums, setCustomPremiums] = useState({});
+  const [loading, setLoading] = useState(false); // <- For shimmer
 
   // Main GET fetch
   const fetchStrategyData = async (symbol, expiry = "", strike = "") => {
+    setLoading(true);
     try {
       const url =
         `http://localhost:8000/options-strategy-pnl?ticker=${symbol}` +
@@ -37,6 +40,7 @@ const App = () => {
       setStockInfo(null);
       setError("Failed to fetch strategy data. Please check the ticker.");
     }
+    setLoading(false);
   };
 
   // Premium POST (custom override)
@@ -46,12 +50,11 @@ const App = () => {
     strike,
     updatedPremiums
   ) => {
+    setLoading(true);
     try {
-      // Prepare calls/puts as per backend contract
       const calls = {};
       const puts = {};
       strategyLegs.forEach((leg) => {
-        // Heuristic for call/put from label or key
         if (
           leg.strikeLabel.toLowerCase().includes("call") ||
           leg.key.startsWith("call")
@@ -63,13 +66,11 @@ const App = () => {
         ) {
           puts[leg.strike] = Number(updatedPremiums[leg.key]);
         } else {
-          // fallback if unknown, assign to calls
           calls[leg.strike] = Number(updatedPremiums[leg.key]);
         }
       });
 
       const payload = { calls, puts };
-
       const url =
         `http://localhost:8000/options-strategy-pnl-custom?ticker=${symbol}` +
         (expiry ? `&expiry=${expiry}` : "") +
@@ -82,6 +83,7 @@ const App = () => {
     } catch (err) {
       setError("Failed to update with custom premiums.");
     }
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -144,7 +146,6 @@ const App = () => {
       }
     });
 
-    // Straddle/strangle: {strike, call_premium, put_premium}
     if ("strike" in strategyPremiums && "call_premium" in strategyPremiums) {
       legs.push({
         key: "call_" + strategyPremiums.strike,
@@ -161,7 +162,6 @@ const App = () => {
         strikeLabel: "Put Strike",
       });
     }
-    // Simple pattern {strike, premium}
     if (
       "strike" in strategyPremiums &&
       "premium" in strategyPremiums &&
@@ -180,14 +180,21 @@ const App = () => {
 
   const strategyLegs = extractLegs(premiumData);
 
-  // --- Premium Change Handler triggers POST ---
-  const handlePremiumChange = (key, value) => {
-    setCustomPremiums((prev) => {
-      const next = { ...prev, [key]: Number(value) };
-      // Only POST if value actually changed (not on init)
-      fetchCustomStrategyData(ticker, selectedExpiry, selectedStrike, next);
-      return next;
-    });
+  // --- Premium Change Handler triggers POST ONLY on Enter ---
+  const handlePremiumKeyDown = (e, key) => {
+    if (e.key === "Enter") {
+      const value = e.target.value;
+      setCustomPremiums((prev) => {
+        const next = { ...prev, [key]: Number(value) };
+        fetchCustomStrategyData(ticker, selectedExpiry, selectedStrike, next);
+        return next;
+      });
+    }
+  };
+
+  const handlePremiumInput = (key, value) => {
+    // Controlled input: update local state only, don't POST yet
+    setCustomPremiums((prev) => ({ ...prev, [key]: value }));
   };
 
   const LOT_SIZE = 100;
@@ -256,7 +263,9 @@ const App = () => {
                   )
                   .map((strategy) => (
                     <option key={strategy} value={strategy}>
-                      {strategy.replace(/_/g, " ")}
+                      {strategy
+                        .replace(/_/g, " ")
+                        .replace(/\b\w/g, (l) => l.toUpperCase())}
                     </option>
                   ))}
             </select>
@@ -289,8 +298,9 @@ const App = () => {
                       className="premium-box"
                       value={customPremiums[leg.key] ?? leg.premium}
                       onChange={(e) =>
-                        handlePremiumChange(leg.key, e.target.value)
+                        handlePremiumInput(leg.key, e.target.value)
                       }
+                      onKeyDown={(e) => handlePremiumKeyDown(e, leg.key)}
                     />
                   </div>
                 </div>
@@ -302,36 +312,48 @@ const App = () => {
 
       {error && <div className="error-message">{error}</div>}
 
-      {stockInfo?.strategies?.length > 0 && selectedStrategy && (
-        <div className="strategy-table-container">
-          <table className="strategy-table">
-            <thead>
-              <tr>
-                <th>Price at Expiry</th>
-                <th>{selectedStrategy.replace(/_/g, " ")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stockInfo.strategies.map((row, idx) => (
-                <tr key={idx}>
-                  <td>{row["Price at Expiry"]}</td>
-                  <td
-                    className={`${
-                      Number(getAdjustedPnL(row)) > 0
-                        ? "text-green"
-                        : Number(getAdjustedPnL(row)) < 0
-                        ? "text-red"
-                        : ""
-                    }`}
-                  >
-                    ${getAdjustedPnL(row)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="strategy-table-container">
+        <table className="strategy-table">
+          <thead>
+            <tr>
+              <th>Price at Expiry</th>
+              <th>
+                {selectedStrategy
+                  .replace(/_/g, " ")
+                  .replace(/\b\w/g, (l) => l.toUpperCase())}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading
+              ? Array.from({ length: SKELETON_ROW_COUNT }).map((_, idx) => (
+                  <tr key={idx}>
+                    <td colSpan={2}>
+                      <div className="skeleton-row" />
+                    </td>
+                  </tr>
+                ))
+              : stockInfo?.strategies?.length > 0 && selectedStrategy
+              ? stockInfo.strategies.map((row, idx) => (
+                  <tr key={idx}>
+                    <td>{row["Price at Expiry"]}</td>
+                    <td
+                      className={`${
+                        Number(getAdjustedPnL(row)) > 0
+                          ? "text-green"
+                          : Number(getAdjustedPnL(row)) < 0
+                          ? "text-red"
+                          : ""
+                      }`}
+                    >
+                      ${getAdjustedPnL(row)}
+                    </td>
+                  </tr>
+                ))
+              : null}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

@@ -232,3 +232,19 @@ label {
   align-items: center;
   gap: 14px;
 }
+.skeleton-row {
+  background: linear-gradient(90deg, #f7f7f7 25%, #ececec 37%, #f7f7f7 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.3s infinite linear;
+  height: 38px;
+  border-radius: 4px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
