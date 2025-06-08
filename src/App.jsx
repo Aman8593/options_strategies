@@ -16,7 +16,7 @@ const App = () => {
   const [selectedStrategy, setSelectedStrategy] = useState("");
   const [selectedStrike, setSelectedStrike] = useState("");
   const [customPremiums, setCustomPremiums] = useState({});
-  const [loading, setLoading] = useState(false); // <- For shimmer
+  const [loading, setLoading] = useState(false);
 
   // Main GET fetch
   const fetchStrategyData = async (symbol, expiry = "", strike = "") => {
@@ -35,7 +35,6 @@ const App = () => {
       if (!selectedStrike)
         setSelectedStrike(data.selected_strike || data.atm_strike || strike);
       setError(null);
-      // eslint-disable-next-line no-unused-vars
     } catch (err) {
       setStockInfo(null);
       setError("Failed to fetch strategy data. Please check the ticker.");
@@ -79,7 +78,6 @@ const App = () => {
       const res = await axios.post(url, payload);
       setStockInfo(res.data);
       setError(null);
-      // eslint-disable-next-line no-unused-vars
     } catch (err) {
       setError("Failed to update with custom premiums.");
     }
@@ -88,14 +86,12 @@ const App = () => {
 
   useEffect(() => {
     fetchStrategyData(ticker);
-    // eslint-disable-next-line
   }, []);
 
   useEffect(() => {
     if (stockInfo) {
       fetchStrategyData(ticker, selectedExpiry, selectedStrike);
     }
-    // eslint-disable-next-line
   }, [selectedExpiry, selectedStrike]);
 
   useEffect(() => {
@@ -110,8 +106,15 @@ const App = () => {
       );
       setSelectedStrategy(keys[0]);
     }
-    // eslint-disable-next-line
   }, [stockInfo, selectedStrategy]);
+
+  useEffect(() => {
+  if (Object.keys(customPremiums).length > 0) {
+    fetchCustomStrategyData(ticker, selectedExpiry, selectedStrike, customPremiums);
+  }
+}, [customPremiums, ticker, selectedExpiry, selectedStrike]);
+
+  
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -124,92 +127,89 @@ const App = () => {
   const premiumData =
     stockInfo?.strategies?.[0]?.premium_breakdown?.[selectedStrategy] || {};
 
-  // ---- Extract Legs: Descriptive for Strike, only show strikeLabel for strike ----
-  const extractLegs = (strategyPremiums) => {
-    const legs = [];
-    if (!strategyPremiums || typeof strategyPremiums !== "object") return legs;
+  // Extract Legs: Descriptive for Strike, only show strikeLabel for strike
+const prettyLabel = (key) => {
+  return key
+    .replace(/_/g, " ")
+    .replace("strike", "Strike")
+    .replace("premium", "Premium")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
 
-    Object.keys(strategyPremiums).forEach((key) => {
-      if (key.endsWith("strike")) {
-        const strikeKey = key;
-        const strike = strategyPremiums[key];
-        const premiumKey = key.replace("strike", "premium");
-        const premium = strategyPremiums[premiumKey];
-        if (premium !== undefined) {
-          legs.push({
-            key: `${strikeKey}_${strike}`,
-            strike,
-            premium,
-            strikeLabel: prettyLabel(strikeKey),
-          });
-        }
+const extractLegs = (strategyPremiums) => {
+  const legs = [];
+  if (!strategyPremiums || typeof strategyPremiums !== "object") return legs;
+
+  const strikeKeys = Object.keys(strategyPremiums).filter((key) =>
+    key.includes("strike")
+  );
+
+  strikeKeys.forEach((strikeKey) => {
+    const strike = strategyPremiums[strikeKey];
+
+    // Possible premium key patterns
+    let premiumKey = strikeKey.replace("strike", "premium");
+    let premium = strategyPremiums[premiumKey];
+
+    // Handle special case: strike + call_premium or put_premium
+    if (premium === undefined && strikeKey === "strike") {
+      if ("call_premium" in strategyPremiums) {
+        premiumKey = "call_premium";
+        premium = strategyPremiums.call_premium;
+      } else if ("put_premium" in strategyPremiums) {
+        premiumKey = "put_premium";
+        premium = strategyPremiums.put_premium;
       }
-    });
+    }
 
-    if ("strike" in strategyPremiums && "call_premium" in strategyPremiums) {
+    // Handle case: strike + premium
+    if (premium === undefined && "premium" in strategyPremiums) {
+      premiumKey = "premium";
+      premium = strategyPremiums.premium;
+    }
+
+    if (premium !== undefined) {
       legs.push({
-        key: "call_" + strategyPremiums.strike,
-        strike: strategyPremiums.strike,
-        premium: strategyPremiums.call_premium,
-        strikeLabel: "Call Strike",
+        key: `${strikeKey}_${strike}`,
+        strike,
+        premium,
+        strikeLabel: prettyLabel(strikeKey),
       });
     }
-    if ("strike" in strategyPremiums && "put_premium" in strategyPremiums) {
-      legs.push({
-        key: "put_" + strategyPremiums.strike,
-        strike: strategyPremiums.strike,
-        premium: strategyPremiums.put_premium,
-        strikeLabel: "Put Strike",
-      });
-    }
-    if (
-      "strike" in strategyPremiums &&
-      "premium" in strategyPremiums &&
-      legs.length === 0
-    ) {
-      legs.push({
-        key: "strike_" + strategyPremiums.strike,
-        strike: strategyPremiums.strike,
-        premium: strategyPremiums.premium,
-        strikeLabel: "Strike",
-      });
-    }
-    return legs;
-  };
-  // ---------------------------------------------------------------------
+  });
+
+  return legs;
+};
+
 
   const strategyLegs = extractLegs(premiumData);
 
-  // --- Premium Change Handler triggers POST ONLY on Enter ---
+
+  // Premium Change Handler triggers POST ONLY on Enter
+  // const handlePremiumKeyDown = (e, key) => {
+  //   if (e.key === "Enter") {
+  //     const value = e.target.value;
+  //     setCustomPremiums((prev) => {
+  //       const next = { ...prev, [key]: Number(value) };
+  //       fetchCustomStrategyData(ticker, selectedExpiry, selectedStrike, next);
+  //       return next;
+  //     });
+  //   }
+  // };
+
   const handlePremiumKeyDown = (e, key) => {
-    if (e.key === "Enter") {
-      const value = e.target.value;
-      setCustomPremiums((prev) => {
-        const next = { ...prev, [key]: Number(value) };
-        fetchCustomStrategyData(ticker, selectedExpiry, selectedStrike, next);
-        return next;
-      });
-    }
-  };
+  if (e.key === "Enter") {
+    const value = e.target.value;
+    setCustomPremiums((prev) => ({ ...prev, [key]: Number(value) }));
+  }
+};
+
+
+
 
   const handlePremiumInput = (key, value) => {
     // Controlled input: update local state only, don't POST yet
     setCustomPremiums((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const LOT_SIZE = 100;
-  const getAdjustedPnL = (row) => {
-    const basePnL = Number(row[selectedStrategy]);
-    const originalPremiums = strategyLegs.reduce(
-      (acc, leg) => acc + Number(leg.premium || 0),
-      0
-    );
-    const adjustedPremiums = strategyLegs.reduce(
-      (acc, leg) => acc + Number(customPremiums[leg.key] ?? leg.premium),
-      0
-    );
-    const diff = adjustedPremiums - originalPremiums;
-    return (basePnL + diff * LOT_SIZE).toFixed(2);
   };
 
   return (
@@ -339,14 +339,14 @@ const App = () => {
                     <td>{row["Price at Expiry"]}</td>
                     <td
                       className={`${
-                        Number(getAdjustedPnL(row)) > 0
+                        Number(row[selectedStrategy]) > 0
                           ? "text-green"
-                          : Number(getAdjustedPnL(row)) < 0
+                          : Number(row[selectedStrategy]) < 0
                           ? "text-red"
                           : ""
                       }`}
                     >
-                      ${getAdjustedPnL(row)}
+                      ${Number(row[selectedStrategy]).toFixed(2)}
                     </td>
                   </tr>
                 ))
