@@ -3,9 +3,6 @@ import axios from "axios";
 import { Search } from "lucide-react";
 import "./App.css";
 
-const prettyLabel = (raw) =>
-  raw.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
-
 const SKELETON_ROW_COUNT = 8; // Number of shimmer rows to show when loading
 
 const App = () => {
@@ -35,6 +32,7 @@ const App = () => {
       if (!selectedStrike)
         setSelectedStrike(data.selected_strike || data.atm_strike || strike);
       setError(null);
+      // eslint-disable-next-line no-unused-vars
     } catch (err) {
       setStockInfo(null);
       setError("Failed to fetch strategy data. Please check the ticker.");
@@ -42,7 +40,7 @@ const App = () => {
     setLoading(false);
   };
 
-  // Premium POST (custom override)
+  // Premium POST (custom override) - UPDATED LOGIC
   const fetchCustomStrategyData = async (
     symbol,
     expiry,
@@ -51,25 +49,16 @@ const App = () => {
   ) => {
     setLoading(true);
     try {
-      const calls = {};
-      const puts = {};
+      // Updated: build the payload to match backend expectation
+      // { [selectedStrategy]: { buy_premium: ..., sell_premium: ..., ... } }
+      const premiums = {};
       strategyLegs.forEach((leg) => {
-        if (
-          leg.strikeLabel.toLowerCase().includes("call") ||
-          leg.key.startsWith("call")
-        ) {
-          calls[leg.strike] = Number(updatedPremiums[leg.key]);
-        } else if (
-          leg.strikeLabel.toLowerCase().includes("put") ||
-          leg.key.startsWith("put")
-        ) {
-          puts[leg.strike] = Number(updatedPremiums[leg.key]);
-        } else {
-          calls[leg.strike] = Number(updatedPremiums[leg.key]);
-        }
+        premiums[leg.premiumKey] = Number(updatedPremiums[leg.key]);
       });
+      const payload = {
+        [selectedStrategy]: premiums,
+      };
 
-      const payload = { calls, puts };
       const url =
         `http://localhost:8000/options-strategy-pnl-custom?ticker=${symbol}` +
         (expiry ? `&expiry=${expiry}` : "") +
@@ -78,6 +67,7 @@ const App = () => {
       const res = await axios.post(url, payload);
       setStockInfo(res.data);
       setError(null);
+      // eslint-disable-next-line no-unused-vars
     } catch (err) {
       setError("Failed to update with custom premiums.");
     }
@@ -86,12 +76,14 @@ const App = () => {
 
   useEffect(() => {
     fetchStrategyData(ticker);
+    // eslint-disable-next-line
   }, []);
 
   useEffect(() => {
     if (stockInfo) {
       fetchStrategyData(ticker, selectedExpiry, selectedStrike);
     }
+    // eslint-disable-next-line
   }, [selectedExpiry, selectedStrike]);
 
   useEffect(() => {
@@ -106,15 +98,20 @@ const App = () => {
       );
       setSelectedStrategy(keys[0]);
     }
+    // eslint-disable-next-line
   }, [stockInfo, selectedStrategy]);
 
   useEffect(() => {
-  if (Object.keys(customPremiums).length > 0) {
-    fetchCustomStrategyData(ticker, selectedExpiry, selectedStrike, customPremiums);
-  }
-}, [customPremiums, ticker, selectedExpiry, selectedStrike]);
-
-  
+    if (Object.keys(customPremiums).length > 0) {
+      fetchCustomStrategyData(
+        ticker,
+        selectedExpiry,
+        selectedStrike,
+        customPremiums
+      );
+    }
+    // eslint-disable-next-line
+  }, [customPremiums, ticker, selectedExpiry, selectedStrike]);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -124,88 +121,56 @@ const App = () => {
     fetchStrategyData(ticker);
   };
 
+  const prettyLabel = (key) => {
+    return key
+      .replace(/_/g, " ")
+      .replace("strike", "Strike")
+      .replace("premium", "Premium")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  // === UPDATED LEG EXTRACTION LOGIC TO INCLUDE premiumKey ===
+  const extractLegs = (strategyPremiums) => {
+    const legs = [];
+    if (!strategyPremiums || typeof strategyPremiums !== "object") return legs;
+
+    // Map all premium keys by their corresponding strike keys
+    Object.entries(strategyPremiums).forEach(([k, v]) => {
+      if (k.toLowerCase().includes("strike")) {
+        // Find corresponding premium key for this strike key
+        let premiumKey;
+        if (k.includes("buy")) premiumKey = k.replace("strike", "premium");
+        else if (k.includes("sell"))
+          premiumKey = k.replace("strike", "premium");
+        else if (k === "call_strike") premiumKey = "call_premium";
+        else if (k === "put_strike") premiumKey = "put_premium";
+        else premiumKey = "premium";
+
+        legs.push({
+          key: `${k}_${v}`,
+          strike: v,
+          premium: strategyPremiums[premiumKey],
+          strikeLabel: prettyLabel(k),
+          premiumKey, // <-- important for POST payload
+        });
+      }
+    });
+    return legs;
+  };
+
+  // Use selectedStrategy to get premium breakdown for current strategy
   const premiumData =
     stockInfo?.strategies?.[0]?.premium_breakdown?.[selectedStrategy] || {};
 
-  // Extract Legs: Descriptive for Strike, only show strikeLabel for strike
-const prettyLabel = (key) => {
-  return key
-    .replace(/_/g, " ")
-    .replace("strike", "Strike")
-    .replace("premium", "Premium")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-};
-
-const extractLegs = (strategyPremiums) => {
-  const legs = [];
-  if (!strategyPremiums || typeof strategyPremiums !== "object") return legs;
-
-  const strikeKeys = Object.keys(strategyPremiums).filter((key) =>
-    key.includes("strike")
-  );
-
-  strikeKeys.forEach((strikeKey) => {
-    const strike = strategyPremiums[strikeKey];
-
-    // Possible premium key patterns
-    let premiumKey = strikeKey.replace("strike", "premium");
-    let premium = strategyPremiums[premiumKey];
-
-    // Handle special case: strike + call_premium or put_premium
-    if (premium === undefined && strikeKey === "strike") {
-      if ("call_premium" in strategyPremiums) {
-        premiumKey = "call_premium";
-        premium = strategyPremiums.call_premium;
-      } else if ("put_premium" in strategyPremiums) {
-        premiumKey = "put_premium";
-        premium = strategyPremiums.put_premium;
-      }
-    }
-
-    // Handle case: strike + premium
-    if (premium === undefined && "premium" in strategyPremiums) {
-      premiumKey = "premium";
-      premium = strategyPremiums.premium;
-    }
-
-    if (premium !== undefined) {
-      legs.push({
-        key: `${strikeKey}_${strike}`,
-        strike,
-        premium,
-        strikeLabel: prettyLabel(strikeKey),
-      });
-    }
-  });
-
-  return legs;
-};
-
-
   const strategyLegs = extractLegs(premiumData);
 
-
   // Premium Change Handler triggers POST ONLY on Enter
-  // const handlePremiumKeyDown = (e, key) => {
-  //   if (e.key === "Enter") {
-  //     const value = e.target.value;
-  //     setCustomPremiums((prev) => {
-  //       const next = { ...prev, [key]: Number(value) };
-  //       fetchCustomStrategyData(ticker, selectedExpiry, selectedStrike, next);
-  //       return next;
-  //     });
-  //   }
-  // };
-
   const handlePremiumKeyDown = (e, key) => {
-  if (e.key === "Enter") {
-    const value = e.target.value;
-    setCustomPremiums((prev) => ({ ...prev, [key]: Number(value) }));
-  }
-};
-
-
-
+    if (e.key === "Enter") {
+      const value = e.target.value;
+      setCustomPremiums((prev) => ({ ...prev, [key]: Number(value) }));
+    }
+  };
 
   const handlePremiumInput = (key, value) => {
     // Controlled input: update local state only, don't POST yet
