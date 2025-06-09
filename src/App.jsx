@@ -141,32 +141,27 @@ const extractLegs = (strategyPremiums) => {
   if (!strategyPremiums || typeof strategyPremiums !== "object") return legs;
 
   const strikeKeys = Object.keys(strategyPremiums).filter((key) =>
-    key.includes("strike")
+    key.toLowerCase().includes("strike")
   );
 
   strikeKeys.forEach((strikeKey) => {
     const strike = strategyPremiums[strikeKey];
 
-    // Possible premium key patterns
-    let premiumKey = strikeKey.replace("strike", "premium");
-    let premium = strategyPremiums[premiumKey];
+    // Define possible premium key formats for this strike key
+    const base = strikeKey.replace(/_strike/i, "").toLowerCase();
 
-    // Handle special case: strike + call_premium or put_premium
-    if (premium === undefined && strikeKey === "strike") {
-      if ("call_premium" in strategyPremiums) {
-        premiumKey = "call_premium";
-        premium = strategyPremiums.call_premium;
-      } else if ("put_premium" in strategyPremiums) {
-        premiumKey = "put_premium";
-        premium = strategyPremiums.put_premium;
-      }
-    }
+    const possiblePremiumKeys = [
+      `${base}_premium`,     // call_strike => call_premium
+      `premium`,             // generic premium
+      `call_premium`,        // fallback
+      `put_premium`          // fallback
+    ];
 
-    // Handle case: strike + premium
-    if (premium === undefined && "premium" in strategyPremiums) {
-      premiumKey = "premium";
-      premium = strategyPremiums.premium;
-    }
+    let premiumKey = possiblePremiumKeys.find(
+      (key) => key in strategyPremiums
+    );
+
+    const premium = premiumKey ? strategyPremiums[premiumKey] : undefined;
 
     if (premium !== undefined) {
       legs.push({
@@ -180,6 +175,7 @@ const extractLegs = (strategyPremiums) => {
 
   return legs;
 };
+
 
 
   const strategyLegs = extractLegs(premiumData);
